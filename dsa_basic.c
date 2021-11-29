@@ -23,7 +23,17 @@ int main(int argc, char **argv) {
 		return status;
 	}
 
-	dml_job_ptr = (dml_job_t *) malloc(job_size_ptr);
+	printf("job_size HARDWARE: %u\n", job_size_ptr);
+
+	status = dml_get_job_size(DML_PATH_SW, &job_size_ptr);
+	if (status != DML_STATUS_OK) {
+		fprintf(stderr, "Status error %d", status);
+		return status;
+	}
+
+	printf("job_size SOFTWARE: %u\n", job_size_ptr);
+
+	dml_job_ptr = (dml_job_t *)malloc(job_size_ptr);
 
 	status = dml_init_job(DML_PATH_HW, dml_job_ptr);
 	if (status != DML_STATUS_OK) {

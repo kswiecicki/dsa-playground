@@ -53,5 +53,6 @@ dkms.conf
 
 # Custom
 dsa_basic
+dsa_batch
 dsa_pmem
-dsa_pmem_uasync
+dsa_pmem_miniasync

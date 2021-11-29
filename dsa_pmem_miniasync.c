@@ -6,14 +6,13 @@
 #include <unistd.h>
 
 #include <dml/dml.h>
+#include <libminiasync.h>
+#include <libminiasync-dml.h>
 #include <libpmem2.h>
-#include <libuasync.h>
-
-#include "dml_mover.h"
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "usage: dsa_pmem <file>");
+		fprintf(stderr, "usage: dsa_pmem_miniasync <file>");
 		exit(-1);
 	}
 
@@ -23,7 +22,7 @@ int main(int argc, char **argv) {
 	int n_vals = 8;
 	int buf_alloc_size = sizeof(char) * n_vals;
 	char *buf = malloc(buf_alloc_size);
-	memset(buf, 10, n_vals);
+	memset(buf, 111, n_vals);
 
 	struct pmem2_source *src;
 	struct pmem2_config *cfg;
@@ -70,12 +69,13 @@ int main(int argc, char **argv) {
 	void *map_addr = pmem2_map_get_address(map);
 	size_t map_size = pmem2_map_get_size(map);
 
-	/* UASYNC */
+	/* MINIASYNC */
 	struct runtime *r = runtime_new();
-	struct mover *dml_mover = mover_new(mover_runner_dml_synchronous());
-	struct mover_memcpy_future dml_memcpy_future = mover_memcpy(dml_mover, map_addr, buf, buf_alloc_size);
+	struct vdm *dml_mover = vdm_new(vdm_descriptor_dml_async());
+	struct vdm_memcpy_future dml_memcpy_future = vdm_memcpy(dml_mover,
+			map_addr, buf, buf_alloc_size, MINIASYNC_DML_F_MEM_DURABLE);
 
-	future_poll(FUTURE_AS_RUNNABLE(&dml_memcpy_future), future_noop_waker());
+	runtime_wait(r, FUTURE_AS_RUNNABLE(&dml_memcpy_future));
 
 	/* validation */
 	for (int i = 0; i < n_vals; i++) {
