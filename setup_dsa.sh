@@ -89,19 +89,82 @@ disable_wq()
 	accel-config disable-wq ${dsa}/${wq}
 }
 
-configure_shared_wq 1 0 0
-configure_shared_wq 1 1 1
-configure_shared_wq 1 2 2
-configure_shared_wq 1 3 3
+setup_dsa()
+{
+	if [[ $# != 2 ]]; then
+		echo "Usage: ${FUNCNAME} from_dsa_id to_dsa_id"
+		exit
+	fi
 
-configure_engine 1 0 0
-configure_engine 1 1 1
-configure_engine 1 2 2
-configure_engine 1 3 3
+	local max_wq_id=7
+	local max_group_id=3
+	local max_engine_id=3
 
-enable_device 1
+	for dsa_id in $(seq $1 $2)
+	do
+		disable_device ${dsa_id}
 
-enable_wq 1 0
-enable_wq 1 1
-enable_wq 1 2
-enable_wq 1 3
+		for wq_id in $(seq 0 ${max_wq_id})
+		do
+			configure_shared_wq ${dsa_id} ${wq_id} $((${wq_id} % ${max_group_id}))
+		done
+
+		for engine_id in $(seq 0 ${max_engine_id})
+		do
+			configure_engine ${dsa_id} ${engine_id} $((${engine_id} % ${max_group_id}))
+		done
+
+		enable_device ${dsa_id}
+
+		for wq_id in $(seq 0 ${max_wq_id})
+		do
+			enable_wq ${dsa_id} ${wq_id}
+		done
+	done
+
+	local dsa_id=$1
+	local wq_id=$2
+	local dsa="dsa${dsa_id}"
+	local wq="wq${dsa_id}.${wq_id}"
+
+	accel-config disable-wq ${dsa}/${wq}
+}
+
+# WQ 0
+
+# disable_wq 0 1
+# disable_wq 0 2
+# disable_wq 0 3
+# disable_wq 0 4
+# disable_wq 0 5
+# disable_wq 0 6
+# disable_wq 0 7
+
+# disable_device 0
+
+# configure_shared_wq 0 0 0
+# configure_shared_wq 0 1 1
+# configure_shared_wq 0 2 2
+# configure_shared_wq 0 3 3
+# configure_shared_wq 0 4 0
+# configure_shared_wq 0 5 1
+# configure_shared_wq 0 6 2
+# configure_shared_wq 0 7 3
+
+# configure_engine 0 0 0
+# configure_engine 0 1 1
+# configure_engine 0 2 2
+# configure_engine 0 3 3
+
+# enable_device 0
+
+# enable_wq 0 0
+# enable_wq 0 1
+# enable_wq 0 2
+# enable_wq 0 3
+# enable_wq 0 4
+# enable_wq 0 5
+# enable_wq 0 6
+# enable_wq 0 7
+
+setup_dsa 0 5

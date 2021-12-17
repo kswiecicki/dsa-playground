@@ -30,7 +30,7 @@ LIBS += -l:libminiasync.a -ldl -pthread
 EXTRAS_ROOT = $(MINIASYNC_ROOT)/extras
 CFLAGS += -I$(EXTRAS_ROOT)/dml/include
 LDFLAGS += -L$(MINIASYNC_ROOT)/build/extras/dml
-LIBS += -l:libminiasync-dml.a -ldml
+LIBS += -l:libminiasync-dml.a -ldl -ldml
 
 OBJS_DSA_BASIC = dsa_basic.o
 OBJS_DSA_PMEM = dsa_pmem.o

@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
 	uint32_t job_size_ptr;
 	dml_job_t *dml_job_ptr;
 
-	status = dml_get_job_size(DML_PATH_HW, &job_size_ptr);
+	status = dml_get_job_size(DML_PATH_SW, &job_size_ptr);
 	if (status != DML_STATUS_OK) {
 		fprintf(stderr, "dml_get_job_size error: %d", status);
 		return status;
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
 
 	dml_job_ptr = (dml_job_t *) malloc(job_size_ptr);
 
-	status = dml_init_job(DML_PATH_HW, dml_job_ptr);
+	status = dml_init_job(DML_PATH_SW, dml_job_ptr);
 	if (status != DML_STATUS_OK) {
 		fprintf(stderr, "dml_init_job error: %d", status);
 		return status;

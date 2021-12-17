@@ -1,13 +1,15 @@
 #include <benchmark/benchmark.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <iostream>
-#include <libpmem2.h>
 #include <stdio.h>
 #include <string.h>
-#include <fcntl.h>
 #include <unistd.h>
 
-#include "dml/dml.h"
+#include <dml/dml.h>
+#include <libminiasync.h>
+#include <libminiasync-dml.h>
+#include <libpmem2.h>
 
 #define BENCHMARK_ERR_SKIP(func, err) \
 	sprintf(error_msg, "%s failed with error %d", #func, err); \
@@ -15,7 +17,7 @@
 
 char error_msg[256];
 
-class DMLBenchmark : public benchmark::Fixture {
+class MINIASYNCBenchmark : public benchmark::Fixture {
  public:
  	void SetUp(benchmark::State& state) {
 		 /* inputs */
@@ -23,7 +25,7 @@ class DMLBenchmark : public benchmark::Fixture {
 		assert(data_size > 0);
 
 		/* source buffer */
-		char *buf = (char *)malloc(data_size);
+		buf = (char *)malloc(data_size);
 		memset(buf, 1, data_size);
 
 		/* destination file */
@@ -66,46 +68,27 @@ class DMLBenchmark : public benchmark::Fixture {
 			BENCHMARK_ERR_SKIP(pmem2_map_new, ret);
 		}
 
-		void *dst = pmem2_map_get_address(map);
+		dst = pmem2_map_get_address(map);
 		memset(dst, 0, data_size);
 
-		/* DML */
-		uint32_t job_size_ptr;
-		dml_status_t status;
+		/* MINIASYNC */
+		r = runtime_new();
 
-		status = dml_get_job_size(DML_PATH_HW, &job_size_ptr);
-		if (status != DML_STATUS_OK) {
-			BENCHMARK_ERR_SKIP(dml_get_job_size, status);
-		}
-
-		dml_job_ptr = (dml_job_t *)malloc(job_size_ptr);
-
-		status = dml_init_job(DML_PATH_HW, dml_job_ptr);
-		if (status != DML_STATUS_OK) {
-			BENCHMARK_ERR_SKIP(dml_init_job, status);
-		}
-
-		dml_job_ptr->operation = DML_OP_MEM_MOVE;
-		dml_job_ptr->source_first_ptr = (uint8_t *)buf;
-		dml_job_ptr->destination_first_ptr = (uint8_t *)dst;
-		dml_job_ptr->source_length = data_size;
-		dml_job_ptr->destination_length = data_size;
+		int nfutures = state.range(1);
+		futures = (struct vdm_memcpy_future *)malloc(sizeof(*futures) * nfutures);
 
 		/* custom counter */
-		state.counters["initial data"] = ((uint8_t *)dst)[0];
+		state.counters["before"] = ((uint8_t *)dst)[0];
 	}
 
 	void TearDown(benchmark::State& state) {
 		void *dst = pmem2_map_get_address(map);
 
 		/* custom counter */
-		state.counters["final data"] = ((uint8_t *)dst)[0];
+		state.counters["after"] = ((uint8_t *)dst)[0];
 
-		dml_status_t status;
-		status = dml_finalize_job(dml_job_ptr);
-		if (status != DML_STATUS_OK) {
-			BENCHMARK_ERR_SKIP(dml_finalize_job, status);
-		}
+		free(futures);
+		runtime_delete(r);
 
 		int ret = pmem2_map_delete(&map);
 		if (ret) {
@@ -140,26 +123,59 @@ public:
 	struct pmem2_config *cfg;
 	struct pmem2_map *map;
 
-	/* DML */
-	dml_job_t *dml_job_ptr;
+	/* MINIASYNC */
+	struct runtime *r;
+	struct vdm_memcpy_future *futures;
 
 	/* source */
 	char *buf;
 
 	/* destination */
+	void *dst;
 	int fd;
 };
 
-BENCHMARK_DEFINE_F(DMLBenchmark, Memcpy)(benchmark::State& state) {
-	dml_status_t status;
+BENCHMARK_DEFINE_F(MINIASYNCBenchmark, Memcpy)(benchmark::State& state) {
+	int data_size = state.range(0);
+	int nfutures = state.range(1);
+
+	struct future **base_futures = (struct future **)malloc(sizeof(struct future *) * nfutures);
+	struct vdm *dml_mover = vdm_new(vdm_descriptor_dml());
+
 	for (auto _ : state) {
-		status = dml_execute_job(dml_job_ptr);
-		if (status != DML_STATUS_OK) {
-			BENCHMARK_ERR_SKIP(dml_execute_job, status);
+		state.PauseTiming();
+		for (int i = 0; i < nfutures; i++) {
+			futures[i] = vdm_memcpy(dml_mover, dst, buf, data_size, MINIASYNC_DML_F_MEM_DURABLE);
+			base_futures[i] = FUTURE_AS_RUNNABLE(&futures[i]);
 		}
+
+		state.ResumeTiming();
+		runtime_wait_multiple(r, base_futures, nfutures);
+		state.PauseTiming();
 	}
 }
 
-BENCHMARK_REGISTER_F(DMLBenchmark, Memcpy)->UseRealTime()->ArgsProduct({benchmark::CreateRange(64, 8 << 12, 2)});
+BENCHMARK_DEFINE_F(MINIASYNCBenchmark, MemcpyAsync)(benchmark::State& state) {
+	int data_size = state.range(0);
+	int nfutures = state.range(1);
+
+	struct future **base_futures = (struct future **)malloc(sizeof(struct future *) * nfutures);
+	struct vdm *dml_mover = vdm_new(vdm_descriptor_dml_async());
+
+	for (auto _ : state) {
+		state.PauseTiming();
+		for (int i = 0; i < nfutures; i++) {
+			futures[i] = vdm_memcpy(dml_mover, dst, buf, data_size, MINIASYNC_DML_F_MEM_DURABLE);
+			base_futures[i] = FUTURE_AS_RUNNABLE(&futures[i]);
+		}
+
+		state.ResumeTiming();
+		runtime_wait_multiple(r, base_futures, nfutures);
+		state.PauseTiming();
+	}
+}
+
+BENCHMARK_REGISTER_F(MINIASYNCBenchmark, MemcpyAsync)->UseRealTime()->ArgsProduct({benchmark::CreateRange(64, 8 << 12, 2), benchmark::CreateRange(1, 16, 2)});
+BENCHMARK_REGISTER_F(MINIASYNCBenchmark, Memcpy)->UseRealTime()->ArgsProduct({benchmark::CreateRange(64, 8 << 12, 2), benchmark::CreateRange(1, 16, 2)});
 
 BENCHMARK_MAIN();
