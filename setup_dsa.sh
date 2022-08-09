@@ -121,13 +121,6 @@ setup_dsa()
 			enable_wq ${dsa_id} ${wq_id}
 		done
 	done
-
-	local dsa_id=$1
-	local wq_id=$2
-	local dsa="dsa${dsa_id}"
-	local wq="wq${dsa_id}.${wq_id}"
-
-	accel-config disable-wq ${dsa}/${wq}
 }
 
 # WQ 0
